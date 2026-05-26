@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CoWoS Architecture — Exploded View</title>
+<style>
+:root {
+  --bg: #050810;
+  --grid: rgba(32,60,120,0.25);
+  --accent: #00d4ff;
+  --accent2: #7c3aed;
+  --text: #c8d8f0;
+  --dim: #4a6080;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'Courier New',monospace; overflow:hidden; }
+
+/* scanline overlay */
+body::after {
+  content:''; position:fixed; inset:0; z-index:999; pointer-events:none;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+}
+
+canvas { display:block; position:fixed; inset:0; }
+
+/* HUD top bar */
+#hud-top {
+  position:fixed; top:0; left:0; right:0; height:48px;
+  background: rgba(5,8,16,0.9);
+  border-bottom: 1px solid rgba(0,212,255,0.2);
+  display:flex; align-items:center; padding:0 24px; gap:32px; z-index:100;
+  backdrop-filter:blur(8px);
+}
+.hud-logo {
+  font-size:0.95rem; font-weight:700; letter-spacing:3px; color:var(--accent);
+  text-shadow: 0 0 12px rgba(0,212,255,0.6);
+}
+.hud-sep { width:1px; height:24px; background:rgba(0,212,255,0.2); }
+.hud-label { font-size:0.65rem; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
+.hud-val { font-size:0.72rem; color:var(--text); margin-top:2px; }
+.hud-group { display:flex; flex-direction:column; }
+.hud-right { margin-left:auto; display:flex; align-items:center; gap:16px; }
+#hud-mode {
+  font-size:0.65rem; letter-spacing:2px; padding:4px 12px;
+  border:1px solid var(--accent); border-radius:3px;
+  color:var(--accent); cursor:pointer; transition:all 0.2s;
+  background:transparent;
+}
+#hud-mode:hover { background:rgba(0,212,255,0.1); }
+#hud-mode.active { background:rgba(0,212,255,0.15); }
+
+/* Layer panel left */
+#layer-panel {
+  position:fixed; top:60px; left:16px; z-index:100;
+  width:200px;
+  background:rgba(5,8,16,0.85);
+  border:1px solid rgba(0,212,255,0.15);
+  border-radius:4px;
+  backdrop-filter:blur(8px);
+}
+#layer-panel-title {
+  font-size:0.6rem; letter-spacing:2px; color:var(--accent);
+  padding:8px 12px; border-bottom:1px solid rgba(0,212,255,0.1);
+  text-transform:uppercase;
+}
+.layer-row {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 12px; cursor:pointer;
+  border-bottom:1px solid rgba(0,212,255,0.05);
+  transition: background 0.15s;
+  position:relative;
+}
+.layer-row:hover { background:rgba(0,212,255,0.06); }
+.layer-row.selected { background:rgba(0,212,255,0.1); }
+.layer-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+  box-shadow:0 0 6px currentColor;
+}
+.layer-name { font-size:0.68rem; color:var(--text); flex:1; }
+.layer-y { font-size:0.58rem; color:var(--dim); margin-left:auto; }
+
+/* Info panel right */
+#info-panel {
+  position:fixed; top:60px; right:16px; z-index:100;
+  width:260px;
+  background:rgba(5,8,16,0.88);
+  border:1px solid rgba(0,212,255,0.15);
+  border-radius:4px;
+  backdrop-filter:blur(8px);
+  overflow:hidden;
+  transition: opacity 0.3s;
+}
+#info-title {
+  font-size:0.62rem; letter-spacing:2px; color:var(--accent);
+  padding:8px 14px; border-bottom:1px solid rgba(0,212,255,0.1);
+  text-transform:uppercase; display:flex; align-items:center; gap:8px;
+}
+#info-title .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); flex-shrink:0; }
+#info-body { padding:12px 14px; }
+#info-layer-name { font-size:0.85rem; color:var(--text); margin-bottom:6px; font-weight:bold; }
+#info-desc { font-size:0.68rem; color:#7a9ab8; line-height:1.7; margin-bottom:10px; }
+.spec-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid rgba(0,212,255,0.06); }
+.spec-key { font-size:0.6rem; color:var(--dim); text-transform:uppercase; letter-spacing:1px; }
+.spec-val { font-size:0.6rem; color:var(--accent); font-weight:bold; }
+
+/* Bottom timeline */
+#timeline {
+  position:fixed; bottom:0; left:0; right:0; height:52px;
+  background:rgba(5,8,16,0.9);
+  border-top:1px solid rgba(0,212,255,0.15);
+  display:flex; align-items:center; padding:0 20px; gap:0;
+  z-index:100; backdrop-filter:blur(8px);
+  overflow:hidden;
+}
+.tl-step {
+  flex:1; display:flex; align-items:center; flex-direction:column;
+  cursor:pointer; padding:4px 8px; position:relative;
+  transition:all 0.2s;
+}
+.tl-step:hover .tl-label { color:var(--accent); }
+.tl-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:rgba(0,212,255,0.2); border:1px solid rgba(0,212,255,0.4);
+  margin-bottom:4px; transition:all 0.2s;
+}
+.tl-step.active .tl-dot { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+.tl-label { font-size:0.58rem; color:var(--dim); letter-spacing:1px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80px; }
+.tl-step.active .tl-label { color:var(--text); }
+.tl-line { width:1px; height:20px; background:rgba(0,212,255,0.1); }
+
+/* Controls hint */
+#hint {
+  position:fixed; bottom:60px; right:16px; z-index:100;
+  font-size:0.6rem; color:var(--dim); line-height:2; text-align:right;
+}
+#hint span { color:#6080a0; }
+
+/* Explode slider */
+#explode-wrap {
+  position:fixed; bottom:60px; left:50%; transform:translateX(-50%);
+  z-index:100; display:flex; align-items:center; gap:12px;
+}
+#explode-label { font-size:0.6rem; color:var(--dim); letter-spacing:2px; text-transform:uppercase; }
+#explode-slider {
+  -webkit-appearance:none; appearance:none;
+  width:160px; height:2px; background:rgba(0,212,255,0.2);
+  outline:none; border-radius:2px;
+}
+#explode-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:12px; height:12px; border-radius:50%;
+  background:var(--accent); cursor:pointer;
+  box-shadow:0 0 8px var(--accent);
+}
+#explode-val { font-size:0.6rem; color:var(--accent); width:28px; }
+</style>
+</head>
+<body>
+
+<div id="hud-top">
+  <div class="hud-logo">CoWoS</div>
+  <div class="hud-sep"></div>
+  <div class="hud-group"><div class="hud-label">Technology</div><div class="hud-val">Chip-on-Wafer-on-Substrate</div></div>
+  <div class="hud-sep"></div>
+  <div class="hud-group"><div class="hud-label">Node</div><div class="hud-val">TSMC N3/N4 + CoWoS-S</div></div>
+  <div class="hud-sep"></div>
+  <div class="hud-group"><div class="hud-label">Interposer</div><div class="hud-val">Si — up to 1200mm²</div></div>
+  <div class="hud-sep"></div>
+  <div class="hud-group"><div class="hud-label">HBM</div><div class="hud-val">HBM3e × 4 stacks</div></div>
+  <div class="hud-right">
+    <button id="hud-mode">EXPLODE VIEW</button>
+  </div>
+</div>
+
+<div id="layer-panel">
+  <div id="layer-panel-title">Stack Layers</div>
+  <!-- populated by JS -->
+</div>
+
+<div id="info-panel">
+  <div id="info-title"><div class="dot"></div>COMPONENT INFO</div>
+  <div id="info-body">
+    <div id="info-layer-name">— Select a layer —</div>
+    <div id="info-desc">點擊 3D 場景中的任意元件，或左側圖層列表，查看技術規格。</div>
+    <div id="info-specs"></div>
+  </div>
+</div>
+
+<div id="timeline">
+  <!-- populated by JS -->
+</div>
+
+<div id="explode-wrap">
+  <div id="explode-label">Explode</div>
+  <input type="range" id="explode-slider" min="0" max="100" value="0"/>
+  <div id="explode-val">0%</div>
+</div>
+
+<div id="hint">
+  <span>DRAG</span> Rotate &nbsp;<span>SCROLL</span> Zoom &nbsp;<span>CLICK</span> Select
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+// ── Scene / Camera ────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050810);
+
+// subtle grid floor
+const grid = new THREE.GridHelper(60, 60, 0x0a1828, 0x0a1828);
+grid.position.y = -6;
+scene.add(grid);
+
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(0, 14, 28);
+camera.lookAt(0, 0, 0);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+orbit.dampingFactor = 0.05;
+orbit.minDistance = 8;
+orbit.maxDistance = 50;
+orbit.maxPolarAngle = Math.PI * 0.82;
+orbit.target.set(0, 0, 0);
+
+// ── Lights ────────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x0a1530, 3));
+const key = new THREE.DirectionalLight(0xffffff, 4);
+key.position.set(12, 20, 12);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5; key.shadow.camera.far = 80;
+key.shadow.camera.left = -15; key.shadow.camera.right = 15;
+key.shadow.camera.top = 15; key.shadow.camera.bottom = -15;
+scene.add(key);
+const blue = new THREE.DirectionalLight(0x2040ff, 2);
+blue.position.set(-10, 8, -10);
+scene.add(blue);
+const cyan = new THREE.PointLight(0x00d4ff, 3, 30);
+cyan.position.set(0, 12, 0);
+scene.add(cyan);
+
+// ── Material helpers ───────────────────────────────────────────────────────────
+function makeMat(color, opts = {}) {
+  return new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(color),
+    roughness: opts.r ?? 0.3,
+    metalness: opts.m ?? 0.2,
+    transparent: opts.a < 1,
+    opacity: opts.a ?? 1,
+    emissive: new THREE.Color(opts.e ?? color).multiplyScalar(opts.ei ?? 0),
+    envMapIntensity: 1,
+    wireframe: opts.wire ?? false,
+  });
+}
+
+// ── Layer definitions ─────────────────────────────────────────────────────────
+const LAYERS = [
+  {
+    id: 'ball',
+    name: 'BGA 錫球陣列',
+    nameEn: 'Solder Balls',
+    color: '#8899bb',
+    emissive: '#334466',
+    ei: 0.2,
+    baseY: -4.6,
+    explodeDir: -1,
+    specs: { 直徑: '0.35–0.8 mm', Pitch: '1.0 mm (BGA)', 數量: '~2000 balls', 材質: 'Sn-Ag-Cu (SAC)' },
+    desc: 'BGA（Ball Grid Array）焊球陣列，連接封裝體與 PCB 主板。每顆球都是精密的錫銀銅合金，回流焊後形成可靠電氣接點。',
+  },
+  {
+    id: 'substrate',
+    name: '有機基板',
+    nameEn: 'Organic Substrate',
+    color: '#0d4f7a',
+    emissive: '#021a2e',
+    ei: 0.15,
+    baseY: -3.0,
+    explodeDir: -0.7,
+    specs: { 尺寸: '55×55 mm', 厚度: '1.0–1.5 mm', 層數: '8–12 層銅', 線寬線距: '5/5 μm' },
+    desc: '多層有機 ABF（Ajinomoto Build-up Film）封裝基板，內含高密度銅佈線，向上連接矽中介層，向下接 PCB。',
+  },
+  {
+    id: 'c4',
+    name: 'C4 凸塊層',
+    nameEn: 'C4 Bump Array',
+    color: '#c94f00',
+    emissive: '#601800',
+    ei: 0.3,
+    baseY: -1.5,
+    explodeDir: -0.35,
+    specs: { 直徑: '80–150 μm', Pitch: '130–200 μm', 材質: 'Sn-Ag (97/3)', 數量: '~10,000 bumps' },
+    desc: 'C4（Controlled Collapse Chip Connection）凸塊，連接矽中介層底部與有機基板頂部。比 BGA 錫球更小、更密集。',
+  },
+  {
+    id: 'interposer',
+    name: '矽中介層',
+    nameEn: 'Silicon Interposer',
+    color: '#4c1d95',
+    emissive: '#1a0840',
+    ei: 0.25,
+    baseY: -0.7,
+    explodeDir: 0,
+    specs: { 尺寸: '800–1200 mm²', 製程: 'TSMC CoWoS-S', 'RDL 層數': '4–6 層', '最小線寬': '0.4 μm', 'TSV 直徑': '2–10 μm' },
+    desc: '矽中介層是 CoWoS 的核心，以矽為基底製作超細線路（RDL）連接邏輯晶片與 HBM。TSV（穿矽通孔）垂直導通上下層。',
+  },
+  {
+    id: 'logic',
+    name: '邏輯晶片 (GPU/SoC)',
+    nameEn: 'Logic Die',
+    color: '#1e40af',
+    emissive: '#0a1a60',
+    ei: 0.4,
+    baseY: 1.0,
+    explodeDir: 0.5,
+    specs: { 製程: 'TSMC N3/N4', 尺寸: '~800 mm²', 凸塊數: '>200,000 μbumps', Pitch: '36–55 μm', 功耗: '300–700 W' },
+    desc: '主要運算晶片，採用最先進製程。透過密集微凸塊（microbumps）連接至矽中介層頂部 RDL，實現超短高頻寬訊號路徑。',
+  },
+  {
+    id: 'hbm1',
+    name: 'HBM3e Stack #1 & #2',
+    nameEn: 'HBM Memory Left',
+    color: '#065f46',
+    emissive: '#021a12',
+    ei: 0.3,
+    baseY: 1.0,
+    explodeDir: 0.5,
+    specs: { 標準: 'HBM3e', 頻寬: '1.2 TB/s / stack', 容量: '24 or 36 GB', 堆疊層: '4–12 層 DRAM', TSV: '1024-wide I/O' },
+    desc: 'HBM（High Bandwidth Memory）3e 規格，多層 DRAM 晶片垂直堆疊，以 TSV 串聯，透過矽中介層與邏輯晶片超近距離互連，功耗遠低於 GDDR。',
+  },
+  {
+    id: 'hbm2',
+    name: 'HBM3e Stack #3 & #4',
+    nameEn: 'HBM Memory Right',
+    color: '#064e3b',
+    emissive: '#011810',
+    ei: 0.3,
+    baseY: 1.0,
+    explodeDir: 0.5,
+    specs: { 標準: 'HBM3e', 頻寬: '1.2 TB/s / stack', 容量: '24 or 36 GB', 堆疊層: '4–12 層 DRAM', 總頻寬: '4.8 TB/s (×4)' },
+    desc: '第 3、4 顆 HBM3e 堆疊，位於邏輯晶片另一側。四顆合計總頻寬可達 4.8 TB/s，為 AI 訓練推論提供超大記憶體頻寬。',
+  },
+  {
+    id: 'lid',
+    name: '散熱蓋 (IHS)',
+    nameEn: 'Integrated Heat Spreader',
+    color: '#7090c8',
+    emissive: '#202840',
+    ei: 0.1,
+    baseY: 3.6,
+    explodeDir: 1,
+    specs: { 材質: '無氧銅 (OFC)', 尺寸: '55×55 mm', 'TIM1': '銦合金焊料', 導熱係數: '390 W/m·K' },
+    desc: '金屬散熱蓋（IHS）保護晶片並均勻散熱。TIM1（銦合金或導熱矽脂）填充晶片與蓋之間的間隙，消除空氣隔熱層。',
+  },
+];
+
+// ── Build geometry ─────────────────────────────────────────────────────────────
+const layerMeshes = {};
+const layerGroups = {};
+const allClickable = [];
+
+function makeBox(w, h, d, mat) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function makeSphere(r, mat) {
+  return new THREE.Mesh(new THREE.SphereGeometry(r, 10, 10), mat);
+}
+function makeCylinder(rt, rb, h, mat) {
+  return new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 14), mat);
+}
+
+// --- Solder Balls ---
+{
+  const ld = LAYERS[0];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.08, m:0.9, ei:0.15, e:ld.emissive });
+  for (let ix = -4; ix <= 4; ix++) for (let iz = -3; iz <= 3; iz++) {
+    const s = makeSphere(0.22, mat);
+    s.position.set(ix * 1.0, ld.baseY, iz * 0.95);
+    s.userData = { layerId: ld.id };
+    g.add(s); allClickable.push(s);
+  }
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- Substrate ---
+{
+  const ld = LAYERS[1];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.5, m:0.05, ei:0.1, e:ld.emissive });
+  const traceMat = makeMat('#0ea5e9', { r:0.1, m:0.8, ei:0.4, e:'#0ea5e9' });
+  const body = makeBox(10.5, 1.4, 8.5, mat);
+  body.position.y = ld.baseY; body.userData = { layerId: ld.id };
+  g.add(body); allClickable.push(body);
+  // trace lines
+  for (let i = -4; i <= 4; i += 1.1) {
+    const t = makeBox(10, 0.03, 0.05, traceMat);
+    t.position.set(0, ld.baseY + 0.72, i * 0.78);
+    t.userData = { layerId: ld.id }; g.add(t); allClickable.push(t);
+  }
+  for (let i = -3; i <= 3; i += 1.4) {
+    const t = makeBox(0.05, 0.03, 8, traceMat);
+    t.position.set(i * 1.1, ld.baseY + 0.72, 0);
+    t.userData = { layerId: ld.id }; g.add(t); allClickable.push(t);
+  }
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- C4 bumps ---
+{
+  const ld = LAYERS[2];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.08, m:0.85, ei:0.25, e:ld.emissive });
+  for (let ix = -3.8; ix <= 3.8; ix += 0.65) for (let iz = -2.9; iz <= 2.9; iz += 0.65) {
+    if (Math.random() > 0.12) {
+      const s = makeSphere(0.12, mat);
+      s.position.set(ix, ld.baseY, iz);
+      s.userData = { layerId: ld.id }; g.add(s); allClickable.push(s);
+    }
+  }
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- Interposer ---
+{
+  const ld = LAYERS[3];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.2, m:0.3, ei:0.2, e:ld.emissive });
+  const topMat = makeMat('#7c3aed', { r:0.15, m:0.4, ei:0.3, e:'#5020a0' });
+  const tsvMat = makeMat('#fbbf24', { r:0.05, m:0.98, ei:0.5, e:'#fbbf24' });
+  const body = makeBox(10, 0.7, 8, mat);
+  body.position.y = ld.baseY; body.userData = { layerId: ld.id };
+  g.add(body); allClickable.push(body);
+  const top = makeBox(10, 0.04, 8, topMat);
+  top.position.y = ld.baseY + 0.37; top.userData = { layerId: ld.id };
+  g.add(top); allClickable.push(top);
+  // TSVs
+  for (let ix = -4.5; ix <= 4.5; ix += 0.55) for (let iz = -3.5; iz <= 3.5; iz += 0.55) {
+    if (Math.random() > 0.72) {
+      const tsv = makeCylinder(0.035, 0.035, 0.68, tsvMat);
+      tsv.position.set(ix, ld.baseY, iz);
+      tsv.userData = { layerId: ld.id }; g.add(tsv); allClickable.push(tsv);
+    }
+  }
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- Logic die ---
+{
+  const ld = LAYERS[4];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.18, m:0.5, ei:0.35, e:ld.emissive });
+  const topMat = makeMat('#3b82f6', { r:0.1, m:0.6, ei:0.4, e:'#1e40af' });
+  const body = makeBox(5.8, 0.85, 4.2, mat);
+  body.position.set(-0.5, ld.baseY, 0); body.userData = { layerId: ld.id };
+  g.add(body); allClickable.push(body);
+  const top = makeBox(5.8, 0.04, 4.2, topMat);
+  top.position.set(-0.5, ld.baseY + 0.445, 0); top.userData = { layerId: ld.id };
+  g.add(top); allClickable.push(top);
+  // circuit blocks
+  const cols = [0x2563eb, 0x1d4ed8, 0x3b82f6, 0x60a5fa, 0x1e40af, 0x0ea5e9];
+  [[-1.8,-0.5,1.0,1.2],[-0.2,0.2,0.9,0.9],[0.9,-0.4,0.7,1.1],[-0.6,1.0,1.3,0.5],[0.7,0.9,0.8,0.5]].forEach(([bx,bz,bw,bd],i)=>{
+    const bm = makeBox(bw, 0.13, bd, makeMat('#'+cols[i%cols.length].toString(16).padStart(6,'0'), { r:0.08, m:0.7, ei:0.5, e:'#'+cols[i%cols.length].toString(16).padStart(6,'0') }));
+    bm.position.set(bx - 0.5, ld.baseY + 0.47, bz);
+    bm.userData = { layerId: ld.id }; g.add(bm); allClickable.push(bm);
+  });
+  // microbumps
+  const mbMat = makeMat('#f59e0b', { r:0.06, m:0.95, ei:0.4, e:'#f59e0b' });
+  for (let ix = -2.7; ix <= 2.7; ix += 0.3) for (let iz = -1.9; iz <= 1.9; iz += 0.3) {
+    if (Math.random() > 0.08) {
+      const mb = makeSphere(0.07, mbMat);
+      mb.position.set(ix - 0.5, ld.baseY - 0.47, iz);
+      mb.userData = { layerId: ld.id }; g.add(mb);
+    }
+  }
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- HBM Left (#1 #2) ---
+const HBM_POS = [[-3.4,-2.8],[-3.4,2.8]];
+{
+  const ld = LAYERS[5];
+  const g = new THREE.Group(); g.name = ld.id;
+  HBM_POS.forEach(([hx,hz]) => {
+    const baseMat = makeMat(ld.color, { r:0.2, m:0.35, ei:0.2, e:ld.emissive });
+    const base = makeBox(1.3, 0.2, 1.5, baseMat);
+    base.position.set(hx, ld.baseY - 0.32, hz); base.userData = { layerId: ld.id };
+    g.add(base); allClickable.push(base);
+    const lh = 0.16;
+    for (let l = 0; l < 5; l++) {
+      const c = l === 4 ? '#22c55e' : '#16a34a';
+      const lm = makeBox(1.3, lh, 1.5, makeMat(c, { r:0.15, m:0.4, ei:0.3, e:c }));
+      lm.position.set(hx, ld.baseY - 0.22 + l * (lh + 0.02) + lh/2, hz);
+      lm.userData = { layerId: ld.id }; g.add(lm); allClickable.push(lm);
+      const tsvMat2 = makeMat('#fbbf24', { r:0.05, m:0.98, ei:0.5, e:'#fbbf24' });
+      for (let tv = -0.4; tv <= 0.4; tv += 0.2) {
+        const tsv = makeCylinder(0.025, 0.025, lh, tsvMat2);
+        tsv.position.set(hx + tv, ld.baseY - 0.22 + l * (lh + 0.02) + lh/2, hz);
+        g.add(tsv);
+      }
+    }
+    // microbumps
+    const mbMat = makeMat('#f59e0b', { r:0.06, m:0.95, ei:0.4, e:'#f59e0b' });
+    for (let ix = -0.5; ix <= 0.5; ix += 0.22) for (let iz = -0.6; iz <= 0.6; iz += 0.22) {
+      const mb = makeSphere(0.06, mbMat);
+      mb.position.set(hx + ix, ld.baseY - 0.44, hz + iz); g.add(mb);
+    }
+  });
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- HBM Right (#3 #4) ---
+const HBM_POS2 = [[2.4,-2.8],[2.4,2.8]];
+{
+  const ld = LAYERS[6];
+  const g = new THREE.Group(); g.name = ld.id;
+  HBM_POS2.forEach(([hx,hz]) => {
+    const baseMat = makeMat(ld.color, { r:0.2, m:0.35, ei:0.2, e:ld.emissive });
+    const base = makeBox(1.3, 0.2, 1.5, baseMat);
+    base.position.set(hx, ld.baseY - 0.32, hz); base.userData = { layerId: ld.id };
+    g.add(base); allClickable.push(base);
+    const lh = 0.16;
+    for (let l = 0; l < 5; l++) {
+      const c = l === 4 ? '#4ade80' : '#22c55e';
+      const lm = makeBox(1.3, lh, 1.5, makeMat(c, { r:0.15, m:0.4, ei:0.3, e:c }));
+      lm.position.set(hx, ld.baseY - 0.22 + l * (lh + 0.02) + lh/2, hz);
+      lm.userData = { layerId: ld.id }; g.add(lm); allClickable.push(lm);
+      const tsvMat2 = makeMat('#fbbf24', { r:0.05, m:0.98, ei:0.5, e:'#fbbf24' });
+      for (let tv = -0.4; tv <= 0.4; tv += 0.2) {
+        const tsv = makeCylinder(0.025, 0.025, lh, tsvMat2);
+        tsv.position.set(hx + tv, ld.baseY - 0.22 + l * (lh + 0.02) + lh/2, hz);
+        g.add(tsv);
+      }
+    }
+    const mbMat = makeMat('#f59e0b', { r:0.06, m:0.95, ei:0.4, e:'#f59e0b' });
+    for (let ix = -0.5; ix <= 0.5; ix += 0.22) for (let iz = -0.6; iz <= 0.6; iz += 0.22) {
+      const mb = makeSphere(0.06, mbMat);
+      mb.position.set(hx + ix, ld.baseY - 0.44, hz + iz); g.add(mb);
+    }
+  });
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// --- Heat Lid ---
+{
+  const ld = LAYERS[7];
+  const g = new THREE.Group(); g.name = ld.id;
+  const mat = makeMat(ld.color, { r:0.08, m:0.9, ei:0.08, e:ld.emissive });
+  const timMat = makeMat('#fde68a', { r:0.9, m:0.0, a:0.35, ei:0.1, e:'#fde68a' });
+  const top = makeBox(11, 0.18, 9, mat);
+  top.position.y = ld.baseY + 0.52; top.userData = { layerId: ld.id };
+  g.add(top); allClickable.push(top);
+  [[11,0.9,0.18,0,ld.baseY+0.09,4.41],[11,0.9,0.18,0,ld.baseY+0.09,-4.41],[0.18,0.9,9,5.41,ld.baseY+0.09,0],[-5.41,ld.baseY+0.09,0,0.18,0.9,9]].forEach(args => {
+    if(args.length===6){const w=makeBox(args[0],args[1],args[2],mat);w.position.set(args[3],args[4],args[5]);w.userData={layerId:ld.id};g.add(w);allClickable.push(w);}
+  });
+  [[11,0.9,0.18,0,ld.baseY+0.09,-4.41],[0.18,0.9,9,5.41,ld.baseY+0.09,0],[0.18,0.9,9,-5.41,ld.baseY+0.09,0]].forEach(([w,h,d,x,y,z])=>{const m2=makeBox(w,h,d,mat);m2.position.set(x,y,z);m2.userData={layerId:ld.id};g.add(m2);allClickable.push(m2);});
+  const tim = makeBox(10.6, 0.06, 8.6, timMat);
+  tim.position.y = ld.baseY - 0.09; tim.userData = { layerId: ld.id };
+  g.add(tim); allClickable.push(tim);
+  scene.add(g); layerGroups[ld.id] = g;
+}
+
+// ── Explode logic ─────────────────────────────────────────────────────────────
+let explodeAmt = 0;
+let targetExplode = 0;
+const EXPLODE_SCALE = 6;
+
+function applyExplode(t) {
+  LAYERS.forEach(ld => {
+    const g = layerGroups[ld.id];
+    if (!g) return;
+    g.position.y = ld.explodeDir * t * EXPLODE_SCALE;
+  });
+}
+
+const slider = document.getElementById('explode-slider');
+const explodeVal = document.getElementById('explode-val');
+slider.addEventListener('input', () => {
+  targetExplode = slider.value / 100;
+  explodeVal.textContent = slider.value + '%';
+});
+
+// ── Build left panel ──────────────────────────────────────────────────────────
+const panel = document.getElementById('layer-panel');
+LAYERS.slice().reverse().forEach(ld => {
+  const row = document.createElement('div');
+  row.className = 'layer-row';
+  row.dataset.id = ld.id;
+  row.innerHTML = `
+    <div class="layer-dot" style="color:${ld.color};background:${ld.color};"></div>
+    <div class="layer-name">${ld.name}</div>
+  `;
+  row.addEventListener('click', () => selectLayer(ld.id));
+  panel.appendChild(row);
+});
+
+// ── Build bottom timeline ─────────────────────────────────────────────────────
+const timeline = document.getElementById('timeline');
+LAYERS.forEach((ld, i) => {
+  if (i > 0) { const sep = document.createElement('div'); sep.className='tl-line'; timeline.appendChild(sep); }
+  const step = document.createElement('div');
+  step.className = 'tl-step';
+  step.dataset.id = ld.id;
+  step.innerHTML = `<div class="tl-dot"></div><div class="tl-label">${ld.nameEn}</div>`;
+  step.addEventListener('click', () => selectLayer(ld.id));
+  timeline.appendChild(step);
+});
+
+// ── Info panel update ─────────────────────────────────────────────────────────
+let selectedId = null;
+let originalEmissives = new Map();
+
+function selectLayer(id) {
+  // reset prev
+  if (selectedId) {
+    const g = layerGroups[selectedId];
+    g.traverse(c => {
+      if (c.isMesh && originalEmissives.has(c)) {
+        c.material.emissive.set(originalEmissives.get(c));
+        c.material.emissiveIntensity = originalEmissives.get(c+'_i') ?? 0;
+      }
+    });
+    document.querySelectorAll('.layer-row.selected').forEach(r => r.classList.remove('selected'));
+    document.querySelectorAll('.tl-step.active').forEach(r => r.classList.remove('active'));
+  }
+
+  selectedId = id;
+  const ld = LAYERS.find(l => l.id === id);
+  if (!ld) return;
+
+  // highlight
+  const g = layerGroups[id];
+  g.traverse(c => {
+    if (c.isMesh) {
+      if (!originalEmissives.has(c)) {
+        originalEmissives.set(c, c.material.emissive.clone());
+        originalEmissives.set(c+'_i', c.material.emissiveIntensity);
+      }
+      c.material.emissive.set('#00d4ff');
+      c.material.emissiveIntensity = 0.4;
+    }
+  });
+
+  // update info panel
+  document.getElementById('info-layer-name').textContent = ld.name;
+  document.getElementById('info-desc').textContent = ld.desc;
+  const specsEl = document.getElementById('info-specs');
+  specsEl.innerHTML = '';
+  Object.entries(ld.specs).forEach(([k, v]) => {
+    specsEl.innerHTML += `<div class="spec-row"><div class="spec-key">${k}</div><div class="spec-val">${v}</div></div>`;
+  });
+
+  // update sidebar
+  document.querySelectorAll(`.layer-row[data-id="${id}"]`).forEach(r => r.classList.add('selected'));
+  document.querySelectorAll(`.tl-step[data-id="${id}"]`).forEach(r => r.classList.add('active'));
+}
+
+// ── Raycasting ────────────────────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+renderer.domElement.addEventListener('click', e => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(allClickable, false);
+  if (hits.length > 0) {
+    const id = hits[0].object.userData.layerId;
+    if (id) selectLayer(id);
+  }
+});
+
+// ── Explode mode button ───────────────────────────────────────────────────────
+let explodeMode = false;
+document.getElementById('hud-mode').addEventListener('click', () => {
+  explodeMode = !explodeMode;
+  const btn = document.getElementById('hud-mode');
+  if (explodeMode) {
+    btn.classList.add('active');
+    targetExplode = 1;
+    slider.value = 100;
+    explodeVal.textContent = '100%';
+  } else {
+    btn.classList.remove('active');
+    targetExplode = 0;
+    slider.value = 0;
+    explodeVal.textContent = '0%';
+  }
+});
+
+// ── Assembly animation on load ────────────────────────────────────────────────
+// Start exploded, then collapse in
+let introTimer = 0;
+let introPhase = true; // assembling inward
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── Auto orbit ────────────────────────────────────────────────────────────────
+let autoOrbit = true;
+orbit.addEventListener('start', () => { autoOrbit = false; });
+
+// ── Animate ───────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+// init exploded for intro
+LAYERS.forEach(ld => {
+  const g = layerGroups[ld.id];
+  if (g) g.position.y = ld.explodeDir * EXPLODE_SCALE;
+});
+let introExplode = 1.0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  // intro assembly
+  if (introPhase) {
+    introTimer += dt * 0.4;
+    introExplode = Math.max(0, 1 - easeInOut(Math.min(introTimer, 1)));
+    applyExplode(introExplode);
+    if (introExplode === 0) {
+      introPhase = false;
+      explodeAmt = 0;
+    }
+  } else {
+    // smooth explode from slider
+    explodeAmt += (targetExplode - explodeAmt) * 0.08;
+    applyExplode(explodeAmt);
+  }
+
+  // auto orbit
+  if (autoOrbit && !introPhase) {
+    const t = clock.elapsedTime;
+    const r = 28;
+    camera.position.x = Math.sin(t * 0.12) * r;
+    camera.position.z = Math.cos(t * 0.12) * r;
+    camera.position.y = 14 + Math.sin(t * 0.07) * 4;
+    camera.lookAt(orbit.target);
+  }
+
+  orbit.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

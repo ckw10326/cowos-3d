@@ -1,530 +1,128 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CoWoS 3D Structure Viewer</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a1a; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-    #canvas-container { width: 100vw; height: 100vh; }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CoWoS Interactive — Dual View</title>
+<style>
+:root {
+  --bg: #050810;
+  --accent: #00d4ff;
+  --accent2: #7c3aed;
+  --bar-h: 44px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); overflow:hidden; font-family:'Courier New',monospace; }
 
-    #ui {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      padding: 16px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      pointer-events: none;
-    }
+#tab-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--bar-h);
+  background: rgba(5,8,16,0.96);
+  border-bottom: 1px solid rgba(0,212,255,0.2);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 0;
+  z-index: 999;
+  backdrop-filter: blur(10px);
+}
 
-    #title-block h1 {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: #00d4ff;
-      letter-spacing: 2px;
-    }
-    #title-block p {
-      font-size: 0.75rem;
-      color: #888;
-      margin-top: 2px;
-    }
+.logo {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(0,212,255,0.5);
+  margin-right: 24px;
+  flex-shrink: 0;
+}
 
-    #legend {
-      background: rgba(10,10,30,0.85);
-      border: 1px solid #1a1a3a;
-      border-radius: 10px;
-      padding: 12px 16px;
-      pointer-events: auto;
-      min-width: 200px;
-    }
-    #legend h3 { font-size: 0.7rem; color: #666; letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase; }
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      padding: 4px 6px;
-      border-radius: 6px;
-      transition: background 0.2s;
-    }
-    .legend-item:hover { background: rgba(255,255,255,0.05); }
-    .legend-item.active { background: rgba(0,212,255,0.1); }
-    .legend-color {
-      width: 24px; height: 12px;
-      border-radius: 3px;
-      flex-shrink: 0;
-    }
-    .legend-text { font-size: 0.78rem; color: #ccc; }
-    .legend-sub { font-size: 0.65rem; color: #666; }
+.sep { width:1px; height:22px; background:rgba(0,212,255,0.15); margin:0 4px; }
 
-    #info-panel {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(10,10,30,0.9);
-      border: 1px solid #1a3a5a;
-      border-radius: 12px;
-      padding: 14px 24px;
-      text-align: center;
-      min-width: 320px;
-      transition: all 0.3s;
-    }
-    #info-panel h2 { font-size: 1rem; color: #00d4ff; margin-bottom: 4px; }
-    #info-panel p { font-size: 0.78rem; color: #aaa; line-height: 1.5; }
+.tab {
+  position: relative;
+  height: var(--bar-h);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(200,216,240,0.45);
+  border: none;
+  background: transparent;
+  transition: color 0.2s;
+  white-space: nowrap;
+}
+.tab:hover { color: rgba(200,216,240,0.8); }
+.tab.active { color: var(--accent); }
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.tab-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
 
-    #controls-hint {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      font-size: 0.68rem;
-      color: #444;
-      line-height: 1.8;
-      text-align: right;
-    }
-  </style>
+.frame-wrap {
+  position: fixed;
+  top: var(--bar-h);
+  left: 0; right: 0; bottom: 0;
+  display: none;
+}
+.frame-wrap.active { display: block; }
+
+iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+</style>
 </head>
 <body>
-<div id="canvas-container"></div>
 
-<div id="ui">
-  <div id="title-block">
-    <h1>CoWoS-S Architecture</h1>
-    <p>Chip on Wafer on Substrate — TSMC Advanced Packaging</p>
-  </div>
-  <div id="legend">
-    <h3>Layer Legend</h3>
-    <div class="legend-item" data-layer="substrate">
-      <div class="legend-color" style="background:#4a7c59"></div>
-      <div><div class="legend-text">Substrate</div><div class="legend-sub">BT / ABF Laminate</div></div>
-    </div>
-    <div class="legend-item" data-layer="bumps_sub">
-      <div class="legend-color" style="background:#c8a032"></div>
-      <div><div class="legend-text">C4 Bumps</div><div class="legend-sub">Controlled Collapse Chip Connection</div></div>
-    </div>
-    <div class="legend-item" data-layer="interposer">
-      <div class="legend-color" style="background:#3a6fa8"></div>
-      <div><div class="legend-text">Silicon Interposer</div><div class="legend-sub">TSV + RDL</div></div>
-    </div>
-    <div class="legend-item" data-layer="bumps_die">
-      <div class="legend-color" style="background:#c8a032"></div>
-      <div><div class="legend-text">Micro Bumps</div><div class="legend-sub">Fine-pitch Cu Pillar</div></div>
-    </div>
-    <div class="legend-item" data-layer="logic">
-      <div class="legend-color" style="background:#8a4fff"></div>
-      <div><div class="legend-text">Logic Die (SoC/GPU)</div><div class="legend-sub">Advanced Node FinFET</div></div>
-    </div>
-    <div class="legend-item" data-layer="hbm">
-      <div class="legend-color" style="background:#ff4f7a"></div>
-      <div><div class="legend-text">HBM Stack ×4</div><div class="legend-sub">High Bandwidth Memory</div></div>
-    </div>
-  </div>
+<div id="tab-bar">
+  <div class="logo">CoWoS</div>
+  <div class="sep"></div>
+  <button class="tab active" data-target="view-exploded">
+    <span class="tab-dot"></span>Exploded View
+  </button>
+  <button class="tab" data-target="view-3d">
+    <span class="tab-dot"></span>3D Structure
+  </button>
 </div>
 
-<div id="info-panel">
-  <h2 id="info-title">CoWoS-S Overview</h2>
-  <p id="info-desc">Click any component to learn more. Drag to rotate, scroll to zoom.</p>
+<div class="frame-wrap active" id="view-exploded">
+  <iframe src="exploded.html" title="CoWoS Exploded View"></iframe>
+</div>
+<div class="frame-wrap" id="view-3d">
+  <iframe src="viewer.html" title="CoWoS 3D Viewer" id="iframe-3d"></iframe>
 </div>
 
-<div id="controls-hint">
-  Drag → Rotate<br>
-  Scroll → Zoom<br>
-  Click → Info
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-const INFO = {
-  substrate: {
-    title: 'Organic Substrate',
-    desc: 'Multi-layer BT/ABF laminate substrate. Provides mechanical support, power delivery, and I/O routing to the PCB via BGA solder balls.'
-  },
-  bumps_sub: {
-    title: 'C4 Flip-Chip Bumps',
-    desc: 'Controlled Collapse Chip Connection (C4) bumps connect the silicon interposer to the organic substrate. Pitch: ~130–150 µm.'
-  },
-  interposer: {
-    title: 'Silicon Interposer',
-    desc: 'Passive silicon interposer with Through-Silicon Vias (TSVs) and fine-pitch Redistribution Layers (RDL). Enables die-to-die bandwidth up to 2+ TB/s. Size: up to 1700 mm².'
-  },
-  bumps_die: {
-    title: 'Micro Bumps (µBumps)',
-    desc: 'Fine-pitch copper pillar micro bumps connect the dies to the interposer. Pitch: 40–55 µm. Enable dense interconnects between HBM and Logic die.'
-  },
-  logic: {
-    title: 'Logic Die (SoC / GPU)',
-    desc: 'High-performance compute die fabricated on advanced node (e.g., TSMC N4/N3). Contains GPU cores, AI accelerators, or CPU clusters. Up to 800 mm².'
-  },
-  hbm: {
-    title: 'HBM Memory Stack',
-    desc: 'High Bandwidth Memory (HBM3/HBM3e) stacked with TSVs. Each stack: 8–16 DRAM dies. Bandwidth: ~1.2 TB/s per stack. Up to 4–8 stacks in CoWoS configurations.'
-  }
-};
+  const tabs = document.querySelectorAll('.tab');
+  const frames = document.querySelectorAll('.frame-wrap');
 
-// Scene setup
-const container = document.getElementById('canvas-container');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a1a);
-scene.fog = new THREE.Fog(0x0a0a1a, 30, 80);
-
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 12, 22);
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-container.appendChild(renderer.domElement);
-
-// Lighting
-const ambient = new THREE.AmbientLight(0x223355, 0.8);
-scene.add(ambient);
-
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-dirLight.position.set(10, 20, 10);
-dirLight.castShadow = true;
-scene.add(dirLight);
-
-const pointLight1 = new THREE.PointLight(0x00d4ff, 1.5, 40);
-pointLight1.position.set(-8, 8, 8);
-scene.add(pointLight1);
-
-const pointLight2 = new THREE.PointLight(0xff4f7a, 0.8, 30);
-pointLight2.position.set(8, 6, -6);
-scene.add(pointLight2);
-
-// Grid
-const gridHelper = new THREE.GridHelper(40, 40, 0x111133, 0x111133);
-gridHelper.position.y = -3.5;
-scene.add(gridHelper);
-
-// Materials
-function mat(color, opacity = 1, emissive = 0x000000) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    emissive,
-    emissiveIntensity: 0.15,
-    metalness: 0.3,
-    roughness: 0.5,
-    transparent: opacity < 1,
-    opacity
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.target;
+      tabs.forEach(t => t.classList.remove('active'));
+      frames.forEach(f => f.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(target).classList.add('active');
+    });
   });
-}
-
-const layerMeshes = {};
-
-function box(w, h, d, material, x, y, z, layerKey) {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData.layer = layerKey;
-  scene.add(mesh);
-  if (layerKey) {
-    if (!layerMeshes[layerKey]) layerMeshes[layerKey] = [];
-    layerMeshes[layerKey].push(mesh);
-  }
-  return mesh;
-}
-
-// === Substrate ===
-const subMat = mat(0x4a7c59, 1, 0x1a3a20);
-box(16, 1.2, 9, subMat, 0, -2.4, 0, 'substrate');
-
-// Substrate edge highlight
-const subEdge = new THREE.EdgesGeometry(new THREE.BoxGeometry(16, 1.2, 9));
-const subLine = new THREE.LineSegments(subEdge, new THREE.LineBasicMaterial({ color: 0x6adc89, linewidth: 1 }));
-subLine.position.set(0, -2.4, 0);
-scene.add(subLine);
-
-// BGA balls (bottom)
-const bgaMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.9, roughness: 0.2 });
-for (let i = -5; i <= 5; i += 1.5) {
-  for (let j = -3; j <= 3; j += 1.5) {
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), bgaMat);
-    ball.position.set(i * 0.85, -3.2, j * 0.85);
-    scene.add(ball);
-  }
-}
-
-// === C4 Bumps (Substrate → Interposer) ===
-const bumpMat = mat(0xc8a032, 1, 0x5a4000);
-for (let i = -6; i <= 6; i += 1.0) {
-  for (let j = -3; j <= 3; j += 1.0) {
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 6), bumpMat);
-    b.position.set(i * 1.0, -1.6, j * 1.0);
-    b.userData.layer = 'bumps_sub';
-    scene.add(b);
-    if (!layerMeshes['bumps_sub']) layerMeshes['bumps_sub'] = [];
-    layerMeshes['bumps_sub'].push(b);
-  }
-}
-
-// === Silicon Interposer ===
-const interMat = mat(0x3a6fa8, 0.92, 0x102040);
-box(14, 0.6, 8, interMat, 0, -1.1, 0, 'interposer');
-
-// Interposer edge
-const intEdge = new THREE.EdgesGeometry(new THREE.BoxGeometry(14, 0.6, 8));
-const intLine = new THREE.LineSegments(intEdge, new THREE.LineBasicMaterial({ color: 0x5ab4ff }));
-intLine.position.set(0, -1.1, 0);
-scene.add(intLine);
-
-// TSV visualization (dots on interposer)
-const tsvMat = new THREE.MeshStandardMaterial({ color: 0x00d4ff, emissive: 0x00d4ff, emissiveIntensity: 0.5 });
-for (let i = -6; i <= 6; i += 1.2) {
-  for (let j = -3; j <= 3; j += 1.2) {
-    const tsv = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.62, 6), tsvMat);
-    tsv.position.set(i * 1.0, -1.1, j * 1.0);
-    scene.add(tsv);
-  }
-}
-
-// === Micro Bumps (Interposer → Dies) ===
-const ubumpMat = mat(0xc8a032, 1, 0x5a4000);
-
-function addMicroBumps(xStart, xEnd, zStart, zEnd, y, layerKey) {
-  for (let i = xStart; i <= xEnd; i += 0.4) {
-    for (let j = zStart; j <= zEnd; j += 0.4) {
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.25, 5), ubumpMat);
-      b.position.set(i, y, j);
-      b.userData.layer = layerKey;
-      scene.add(b);
-      if (!layerMeshes[layerKey]) layerMeshes[layerKey] = [];
-      layerMeshes[layerKey].push(b);
-    }
-  }
-}
-
-// Logic die micro bumps
-addMicroBumps(-3.5, 3.5, -3, 3, -0.65, 'bumps_die');
-
-// HBM micro bumps
-const hbmPositions = [[-5.5, -2], [-5.5, 2], [5.5, -2], [5.5, 2]];
-hbmPositions.forEach(([hx, hz]) => {
-  addMicroBumps(hx - 1, hx + 1, hz - 1.5, hz + 1.5, -0.65, 'bumps_die');
-});
-
-// === Logic Die ===
-const logicMat = mat(0x8a4fff, 1, 0x3a1a6a);
-box(8, 0.8, 7, logicMat, 0, -0.0, 0, 'logic');
-
-// Logic die edge glow
-const logicEdge = new THREE.EdgesGeometry(new THREE.BoxGeometry(8, 0.8, 7));
-const logicLine = new THREE.LineSegments(logicEdge, new THREE.LineBasicMaterial({ color: 0xcc99ff }));
-logicLine.position.set(0, -0.0, 0);
-scene.add(logicLine);
-
-// Die surface detail — functional blocks
-const blockColors = [0x6a3adf, 0x9a5aff, 0x7a4aef, 0xaa6aff, 0x5a2abf, 0xba7aff];
-const blockDefs = [
-  [-2.5, 0.46, -2, 2.5, 0.1, 2],
-  [1.5, 0.46, -2, 1.5, 0.1, 2],
-  [-2, 0.46, 2, 2, 0.1, 1],
-  [2.5, 0.46, 0, 1, 0.1, 3],
-  [-2.5, 0.46, 1, 1, 0.1, 2],
-];
-blockDefs.forEach(([x, y, z, w, h, d], i) => {
-  const bm = mat(blockColors[i % blockColors.length], 1, blockColors[i % blockColors.length]);
-  bm.emissiveIntensity = 0.3;
-  const blk = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bm);
-  blk.position.set(x, y, z);
-  scene.add(blk);
-});
-
-// === HBM Stacks ===
-const hbmColors = [0xff4f7a, 0xff6a8a, 0xff3060, 0xff5585];
-hbmPositions.forEach(([hx, hz], idx) => {
-  const stackHeight = 4;
-  const dieCount = 8;
-  for (let d = 0; d < dieCount; d++) {
-    const hbmMat = mat(hbmColors[d % hbmColors.length], 1, 0x5a0020);
-    hbmMat.emissiveIntensity = 0.1 + d * 0.03;
-    const dieMesh = box(2.2, 0.35, 3.2, hbmMat, hx, d * 0.38, hz, 'hbm');
-
-    // TSV wire between HBM dies
-    if (d < dieCount - 1) {
-      const tsvLine = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.03, 0.03, 0.38, 4),
-        new THREE.MeshStandardMaterial({ color: 0xffaaaa, emissive: 0xff4f7a, emissiveIntensity: 0.4 })
-      );
-      tsvLine.position.set(hx, d * 0.38 + 0.19, hz);
-      scene.add(tsvLine);
-    }
-  }
-
-  // HBM edge glow
-  const hEdge = new THREE.EdgesGeometry(new THREE.BoxGeometry(2.2, dieCount * 0.38, 3.2));
-  const hLine = new THREE.LineSegments(hEdge, new THREE.LineBasicMaterial({ color: 0xff9ab0 }));
-  hLine.position.set(hx, (dieCount - 1) * 0.38 / 2, hz);
-  scene.add(hLine);
-});
-
-// === Labels (floating planes) ===
-// We'll use simple 3D text via canvas texture
-function makeLabel(text, color) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256; canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'transparent';
-  ctx.clearRect(0, 0, 256, 64);
-  ctx.fillStyle = color;
-  ctx.font = 'bold 28px Segoe UI';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, 128, 32);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 0.9), mat);
-  return mesh;
-}
-
-const labels = [
-  { text: 'Substrate', color: '#6adc89', pos: [9, -2.4, 0] },
-  { text: 'Interposer', color: '#5ab4ff', pos: [9, -1.1, 0] },
-  { text: 'Logic Die', color: '#cc99ff', pos: [9, 0.2, 0] },
-  { text: 'HBM×4', color: '#ff9ab0', pos: [9, 1.5, 0] },
-];
-labels.forEach(({ text, color, pos }) => {
-  const lbl = makeLabel(text, color);
-  lbl.position.set(...pos);
-  lbl.rotation.y = -0.3;
-  scene.add(lbl);
-});
-
-// === Raycasting / interaction ===
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let hoveredLayer = null;
-
-const originalMats = new Map();
-const highlightMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.4,
-  metalness: 0.3, roughness: 0.3
-});
-
-function highlightLayer(layerKey) {
-  // Reset all
-  originalMats.forEach((mats, mesh) => {
-    if (Array.isArray(mesh.material)) {
-      mesh.material = mats;
-    } else {
-      mesh.material = mats;
-    }
-  });
-  originalMats.clear();
-
-  if (!layerKey || !layerMeshes[layerKey]) return;
-  layerMeshes[layerKey].forEach(mesh => {
-    originalMats.set(mesh, mesh.material);
-    mesh.material = highlightMat;
-  });
-}
-
-renderer.domElement.addEventListener('click', (e) => {
-  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObjects(scene.children, true);
-  const layerHit = hits.find(h => h.object.userData.layer);
-  if (layerHit) {
-    const key = layerHit.object.userData.layer;
-    highlightLayer(key);
-    document.getElementById('info-title').textContent = INFO[key]?.title || key;
-    document.getElementById('info-desc').textContent = INFO[key]?.desc || '';
-    document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
-    document.querySelector(`.legend-item[data-layer="${key}"]`)?.classList.add('active');
-  }
-});
-
-// Legend click
-document.querySelectorAll('.legend-item').forEach(el => {
-  el.addEventListener('click', () => {
-    const key = el.dataset.layer;
-    highlightLayer(key);
-    document.getElementById('info-title').textContent = INFO[key]?.title || key;
-    document.getElementById('info-desc').textContent = INFO[key]?.desc || '';
-    document.querySelectorAll('.legend-item').forEach(e => e.classList.remove('active'));
-    el.classList.add('active');
-  });
-});
-
-// === Orbit controls (manual) ===
-let isDragging = false, prevMouse = { x: 0, y: 0 };
-let spherical = { theta: 0.4, phi: 0.9, radius: 26 };
-
-function updateCamera() {
-  camera.position.x = spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
-  camera.position.y = spherical.radius * Math.cos(spherical.phi);
-  camera.position.z = spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
-  camera.lookAt(0, 1, 0);
-}
-updateCamera();
-
-renderer.domElement.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
-window.addEventListener('mouseup', () => isDragging = false);
-window.addEventListener('mousemove', e => {
-  if (!isDragging) return;
-  const dx = e.clientX - prevMouse.x;
-  const dy = e.clientY - prevMouse.y;
-  spherical.theta -= dx * 0.008;
-  spherical.phi = Math.max(0.2, Math.min(Math.PI - 0.2, spherical.phi + dy * 0.008));
-  prevMouse = { x: e.clientX, y: e.clientY };
-  updateCamera();
-});
-renderer.domElement.addEventListener('wheel', e => {
-  spherical.radius = Math.max(8, Math.min(50, spherical.radius + e.deltaY * 0.03));
-  updateCamera();
-});
-
-// Touch support
-let lastTouch = null;
-renderer.domElement.addEventListener('touchstart', e => { lastTouch = e.touches[0]; });
-renderer.domElement.addEventListener('touchmove', e => {
-  if (!lastTouch) return;
-  const dx = e.touches[0].clientX - lastTouch.clientX;
-  const dy = e.touches[0].clientY - lastTouch.clientY;
-  spherical.theta -= dx * 0.008;
-  spherical.phi = Math.max(0.2, Math.min(Math.PI - 0.2, spherical.phi + dy * 0.008));
-  lastTouch = e.touches[0];
-  updateCamera();
-  e.preventDefault();
-}, { passive: false });
-
-// === Auto rotate ===
-let autoRotate = true;
-renderer.domElement.addEventListener('mousedown', () => autoRotate = false);
-
-// === Animation ===
-const clock = new THREE.Clock();
-function animate() {
-  requestAnimationFrame(animate);
-  const t = clock.getElapsedTime();
-
-  if (autoRotate) {
-    spherical.theta += 0.003;
-    updateCamera();
-  }
-
-  // Pulse point lights
-  pointLight1.intensity = 1.2 + Math.sin(t * 1.5) * 0.3;
-  pointLight2.intensity = 0.6 + Math.sin(t * 1.2 + 1) * 0.2;
-
-  renderer.render(scene, camera);
-}
-animate();
-
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
 </script>
 </body>
 </html>
